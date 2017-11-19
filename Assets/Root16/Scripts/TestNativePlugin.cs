@@ -6,35 +6,34 @@ using UnityEngine;
 
 public class TestNativePlugin : MonoBehaviour
 {
-    [DllImport("SharedAPI")]
-    private static extern int Add(int a, int b);
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ImageData
+    {
+        public int _width;
+        public int _height;
+        public int _bpp;
+        public IntPtr _data;
+    }
 
-    [DllImport("SharedAPI")]
+    [DllImport("ImageLoader", CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr CreateSharedAPI();
-    
-    [DllImport("SharedAPI")]
-    private static extern int getImageWidth(IntPtr api);
 
-    [DllImport("SharedAPI")]
-    private static extern int getImageHeight(IntPtr api);
-
-    [DllImport("SharedAPI")]
-    private static extern int getImageBPP(IntPtr api);
-
-    [DllImport("SharedAPI")]
-    private static extern IntPtr getImageData(IntPtr api);
-
-    [DllImport("SharedAPI")]
+    [DllImport("ImageLoader", CallingConvention = CallingConvention.Cdecl)]
     private static extern IntPtr getImagePath(IntPtr api);
 
-    [DllImport("SharedAPI")]
-    private static extern void LoadImage(IntPtr api, string _path);
+    [DllImport("ImageLoader", CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr LoadImage(IntPtr api, string _path);
+
+    [DllImport("ImageLoader", CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr ReleaseMemory(IntPtr api);
 
     public string imagePath;
-    private IntPtr sharedAPI;
-    private IntPtr imageData;
+    private IntPtr sharedAPI = IntPtr.Zero;
+    private IntPtr inData = IntPtr.Zero;
+    private ImageData imgData;
     private Texture2D stbTexture;
-    
+
+
     // Use this for initialization
     void Start ()
     {
@@ -42,31 +41,27 @@ public class TestNativePlugin : MonoBehaviour
         sharedAPI = CreateSharedAPI();
 
         // Load an image using stb_image from DLL
-        LoadImage(sharedAPI, imagePath);
+        inData = LoadImage(sharedAPI, imagePath);
 
         string path = Marshal.PtrToStringAnsi(getImagePath(sharedAPI));
+
+        imgData = (ImageData)Marshal.PtrToStructure(inData, typeof(ImageData));
         Debug.Log("InputPath : " + path);
+        
+        Debug.Log("Image Width : " + imgData._width);
+        Debug.Log("Image Height : " + imgData._height);
+        Debug.Log("Image BPP : " + imgData._bpp);
 
-        int width = getImageWidth(sharedAPI);
-        int height = getImageHeight(sharedAPI);
-        int bpp = getImageBPP(sharedAPI);
-
-        Debug.Log("Image Width : " + width);
-        Debug.Log("Image Height : " + height);
-        Debug.Log("Image BPP : " + bpp);
-
-        // get image data from DLL in char* format
-        imageData = getImageData(sharedAPI);
-
+        
         // assign memory for storing the raw data
-        int byteLength = width * height * bpp;
+        int byteLength = imgData._width * imgData._height * imgData._bpp;
         byte[] rawImageData = new byte[byteLength];
 
         // Memcpy raw data
-        Marshal.Copy(imageData, rawImageData, 0, byteLength);
+        Marshal.Copy(imgData._data, rawImageData, 0, byteLength);
 
         // create unity's Texture2D object
-        stbTexture = new Texture2D(width, height, TextureFormat.RGB24, false);
+        stbTexture = new Texture2D(imgData._width, imgData._height, TextureFormat.RGB24, false);
 
         // Load raw texture byte data into the texture
         stbTexture.LoadRawTextureData(rawImageData);
@@ -84,6 +79,6 @@ public class TestNativePlugin : MonoBehaviour
 
     private void OnDestroy()
     {
-        
+        ReleaseMemory(sharedAPI);
     }
 }
